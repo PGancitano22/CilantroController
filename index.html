@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Cilantro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --canvas:#0E1A14; --panel:#16271E; --panel-2:#1B3025; --line:#284035;
+    --herb:#52D681; --herb-dim:#2E5C42; --mist:#8AA396; --bone:#EAF2EC;
+    --clay:#E8A15C; --hot:#E5704B; --cool:#6EA8FF; --off:#36463D;
+    --shadow:0 10px 30px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(120% 80% at 50% -10%, #16291F 0%, var(--canvas) 60%) fixed;
+    color:var(--bone); font-family:"Hanken Grotesk",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased; letter-spacing:.01em;
+  }
+  .app{max-width:460px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;
+    padding:max(env(safe-area-inset-top),14px) 18px calc(82px + env(safe-area-inset-bottom)) 18px;}
+
+  header{display:flex;align-items:center;gap:11px;padding:6px 2px 16px}
+  .mark{width:30px;height:30px;flex:none}
+  .word{font-weight:800;font-size:21px;letter-spacing:-.01em}
+  .word span{color:var(--herb)}
+  .conn{margin-left:auto;display:flex;align-items:center;gap:9px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--off);transition:.3s}
+  .dot.on{background:var(--herb);box-shadow:0 0 10px var(--herb)}
+  .dot.warn{background:var(--clay);box-shadow:0 0 10px var(--clay)}
+  .conn .label{font-size:12.5px;color:var(--mist);font-weight:600}
+  button{font-family:inherit;cursor:pointer;border:none}
+  .btn{border:1px solid var(--line);background:var(--panel-2);color:var(--bone);border-radius:12px;
+    padding:8px 14px;font-weight:700;font-size:13px;transition:transform .08s,border-color .2s,background .2s}
+  .btn:active{transform:scale(.96)} .btn.ghost{background:transparent}
+
+  .view{display:none;flex-direction:column;animation:fade .25s ease}
+  .view.active{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mist)}
+  .section-label{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--mist);margin:6px 4px 10px}
+
+  /* temperature hero */
+  .hero{background:linear-gradient(180deg,var(--panel) 0%,#13241B 100%);border:1px solid var(--line);
+    border-radius:20px;padding:20px 20px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+  .temprow{display:flex;align-items:flex-end;gap:4px;margin-top:6px}
+  .temp{font-family:"JetBrains Mono",monospace;font-weight:700;font-size:62px;line-height:.92;font-variant-numeric:tabular-nums}
+  .temp.clay{color:var(--clay)} .temp.hot{color:var(--hot)}
+  .deg{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:500;color:var(--mist);margin-bottom:8px}
+  .gauge{margin-top:16px;height:6px;border-radius:99px;background:#0e1c15;position:relative;border:1px solid #14271d}
+  .gauge .fill{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,var(--herb),var(--clay));transition:width .6s ease}
+  .gauge .thr{position:absolute;top:-4px;width:2px;height:14px;background:var(--bone);opacity:.55;border-radius:2px}
+  .gauge .thr::after{content:"threshold";position:absolute;top:16px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--mist);white-space:nowrap;letter-spacing:.05em}
+  .ovr-line{display:flex;align-items:center;gap:8px;margin-top:26px;font-size:13px;color:var(--mist);font-weight:600}
+  .ovr-line b{font-family:"JetBrains Mono",monospace;color:var(--bone);font-weight:500;font-size:14px}
+  .ovr-line .pill{margin-left:auto;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:800;color:var(--mist)}
+
+  /* pumps */
+  .pumps{display:flex;flex-direction:column;gap:10px}
+  .pump{display:flex;align-items:center;gap:15px;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:15px 17px;transition:border-color .3s,background .3s}
+  .pump.on{border-color:var(--herb-dim);background:linear-gradient(180deg,#193626 0%,var(--panel) 100%)}
+  .node{position:relative;width:40px;height:40px;flex:none;display:grid;place-items:center}
+  .node .core{width:18px;height:18px;border-radius:50%;background:var(--off);transition:.35s}
+  .pump.on .node .core{background:var(--herb);box-shadow:0 0 14px var(--herb)}
+  .node .ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--off);opacity:.5;transition:.35s}
+  .pump.on .node .ring{border-color:var(--herb)}
+  @media (prefers-reduced-motion:no-preference){
+    .pump.on .node::after{content:"";position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--herb);animation:ripple 1.9s ease-out infinite}}
+  @keyframes ripple{0%{transform:scale(.6);opacity:.7}100%{transform:scale(1.7);opacity:0}}
+  .pump .meta{flex:1;min-width:0}
+  .pump .name{font-weight:700;font-size:15.5px}
+  .pump .state{font-size:12.5px;color:var(--mist);font-weight:600;margin-top:1px}
+  .pump.on .state{color:var(--herb)}
+  .pump .count{text-align:right}
+  .pump .count .num{font-family:"JetBrains Mono",monospace;font-size:18px;font-weight:500;font-variant-numeric:tabular-nums}
+  .pump .count .cap{font-size:10px;color:var(--mist);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-top:2px}
+
+  .override{margin-top:16px;width:100%;border-radius:16px;padding:17px;font-weight:800;font-size:16px;
+    color:var(--canvas);background:var(--herb);box-shadow:0 8px 22px rgba(82,214,129,.28);
+    transition:transform .08s,opacity .2s,background .3s;display:flex;align-items:center;justify-content:center;gap:10px}
+  .override:active{transform:scale(.985)}
+  .override:disabled{background:var(--herb-dim);color:#bfe6cd;box-shadow:none;opacity:.85}
+  .override .live{width:9px;height:9px;border-radius:50%;background:var(--canvas)}
+  @media (prefers-reduced-motion:no-preference){.override:disabled .live{animation:blink 1.1s steps(2,start) infinite}}
+  @keyframes blink{50%{opacity:.25}}
+
+  /* settings */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px 18px 8px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:15px;font-weight:800}
+  .card .sub{font-size:12px;color:var(--mist);margin:0 0 14px;font-weight:600}
+  .sl{margin-bottom:18px}
+  .sl .top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+  .sl .lab{font-size:13.5px;font-weight:700}
+  .sl .val{font-family:"JetBrains Mono",monospace;font-size:15px;font-weight:500;color:var(--herb)}
+  .sl.dim .val{color:var(--mist)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:99px;
+    background:var(--panel-2);outline:none;border:1px solid var(--line)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;
+    background:var(--herb);border:3px solid #0d1f16;box-shadow:0 2px 8px rgba(0,0,0,.4);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--herb);
+    border:3px solid #0d1f16;cursor:pointer}
+  input[type=range]:disabled{opacity:.4}
+  input[type=range]:disabled::-webkit-slider-thumb{background:var(--mist)}
+  .swrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .swrow .lab{font-size:13.5px;font-weight:700}
+  .switch{position:relative;width:50px;height:28px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .track{position:absolute;inset:0;background:var(--panel-2);border:1px solid var(--line);border-radius:99px;transition:.25s}
+  .track::before{content:"";position:absolute;width:20px;height:20px;left:3px;top:3px;border-radius:50%;background:var(--mist);transition:.25s}
+  .switch input:checked + .track{background:var(--herb-dim);border-color:var(--herb)}
+  .switch input:checked + .track::before{transform:translateX(22px);background:var(--herb)}
+  .update{position:sticky;bottom:calc(86px + env(safe-area-inset-bottom));width:100%;border-radius:16px;
+    padding:16px;font-weight:800;font-size:15.5px;color:var(--canvas);background:var(--herb);
+    box-shadow:0 8px 22px rgba(82,214,129,.28);transition:transform .08s,opacity .2s}
+  .update:active{transform:scale(.985)} .update:disabled{opacity:.4;box-shadow:none}
+
+  /* history */
+  .chartcard{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}
+  .chartcard svg{width:100%;display:block;overflow:visible}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:4px 2px 14px}
+  .legend span{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--mist);font-weight:700}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .lane{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+  .lane .name{width:48px;font-size:11px;font-weight:700;color:var(--mist)}
+  .lane .track2{position:relative;flex:1;height:18px;background:#0e1c15;border:1px solid #14271d;border-radius:6px;overflow:hidden}
+  .lane .evt{position:absolute;top:0;bottom:0;border-radius:3px;min-width:3px}
+  .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--mist);margin:4px 0 0 58px;font-family:"JetBrains Mono",monospace}
+  .empty{text-align:center;color:var(--mist);font-size:13px;padding:34px 20px;line-height:1.6;font-weight:600}
+  .note{font-size:11.5px;color:var(--mist);line-height:1.5;padding:2px 4px 0;font-weight:600}
+
+  /* veil + toast + tabs */
+  .veil{position:fixed;inset:0;background:rgba(8,15,11,.86);backdrop-filter:blur(6px);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;padding:30px;z-index:40;transition:opacity .3s}
+  .veil h1{font-size:23px;font-weight:800;margin:0}
+  .veil p{color:var(--mist);font-size:14px;line-height:1.55;max-width:300px;margin:0}
+  .veil .cta{background:var(--herb);color:var(--canvas);padding:14px 26px;border-radius:14px;font-weight:800;font-size:15px}
+  .veil .mini{font-size:12.5px;color:var(--mist);text-decoration:underline;background:none;padding:6px}
+  .hidden{opacity:0;pointer-events:none}
+  .err{color:var(--clay);font-size:12.5px;min-height:16px;font-weight:600}
+  .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2);border:1px solid var(--herb-dim);color:var(--bone);padding:11px 20px;border-radius:12px;
+    font-weight:700;font-size:13.5px;opacity:0;pointer-events:none;transition:.3s;z-index:50;box-shadow:var(--shadow)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;max-width:460px;margin:0 auto;display:flex;
+    background:rgba(16,26,20,.92);backdrop-filter:blur(12px);border-top:1px solid var(--line);
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+  .tab{flex:1;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;color:var(--mist);font-weight:700;font-size:10.5px;letter-spacing:.04em}
+  .tab svg{width:21px;height:21px}
+  .tab.active{color:var(--herb)}
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <svg class="mark" viewBox="0 0 32 32" fill="none">
+        <path d="M16 29C16 21 12 17 7 16c4-1 7 1 9 4 0-5 2-8 6-10-2 5-2 8-4 11 3-2 6-2 9 0-5 0-9 3-11 8Z" fill="#52D681"/>
+        <path d="M16 29v-9" stroke="#2E5C42" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <div class="word">Cilan<span>tro</span></div>
+      <div class="conn">
+        <span class="label" id="connLabel">Offline</span>
+        <span class="dot" id="connDot"></span>
+        <button class="btn ghost" id="topBtn" style="display:none">Disconnect</button>
+      </div>
+    </header>
+
+    <!-- ============ DASHBOARD ============ -->
+    <section class="view active" id="view-dash">
+      <div class="hero">
+        <div class="eyebrow">Canopy temperature</div>
+        <div class="temprow"><span class="temp" id="temp">--.-</span><span class="deg">&deg;F</span></div>
+        <div class="gauge"><div class="fill" id="gFill" style="width:0%"></div><div class="thr" id="gThr" style="left:60%"></div></div>
+        <div class="ovr-line"><span>Heat override</span><b id="tempOvr">&mdash;</b><span class="pill" id="tempOvrPill"></span></div>
+      </div>
+      <div class="section-label">Watering lines</div>
+      <div class="pumps" id="pumps"></div>
+      <button class="override" id="override">Run watering cycle now</button>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section class="view" id="view-settings">
+      <div class="card">
+        <h3>Watering schedule</h3>
+        <p class="sub">How often each line runs, and for how long.</p>
+        <div id="schedule"></div>
+      </div>
+      <div class="card">
+        <h3>Heat protection</h3>
+        <p class="sub">Run a full cycle when it stays hot too long.</p>
+        <div class="sl" id="sl-thresh">
+          <div class="top"><span class="lab">Temperature threshold</span><span class="val" id="v-thresh">90&deg;F</span></div>
+          <input type="range" id="r-thresh" min="80" max="110" step="1" value="90">
+        </div>
+        <div class="swrow"><span class="lab">Heat override</span>
+          <label class="switch"><input type="checkbox" id="ovrEnable" checked><span class="track"></span></label>
+        </div>
+        <div class="sl" id="sl-ovr">
+          <div class="top"><span class="lab">Trigger after</span><span class="val" id="v-ovr">6 hr</span></div>
+          <input type="range" id="r-ovr" min="3" max="12" step="1" value="6">
+        </div>
+      </div>
+      <button class="update" id="update">Update controller</button>
+      <p class="note">Saves all values to the controller and stores them in its flash memory.</p>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section class="view" id="view-history">
+      <div class="section-label">Temperature &mdash; this session</div>
+      <div class="chartcard" id="tempChartCard"><div class="empty" id="tempEmpty">Connect to start recording temperature.</div></div>
+      <div class="section-label">Watering &mdash; this session</div>
+      <div class="legend">
+        <span><i style="background:var(--herb)"></i>Scheduled</span>
+        <span><i style="background:var(--cool)"></i>Manual</span>
+        <span><i style="background:var(--clay)"></i>Heat</span>
+      </div>
+      <div id="timeline"><div class="empty" id="tlEmpty">No watering recorded yet this session.</div></div>
+      <p class="note" id="histNote"></p>
+    </section>
+  </div>
+
+  <!-- veil -->
+  <div class="veil" id="veil">
+    <svg width="46" height="46" viewBox="0 0 32 32" fill="none"><path d="M16 29C16 21 12 17 7 16c4-1 7 1 9 4 0-5 2-8 6-10-2 5-2 8-4 11 3-2 6-2 9 0-5 0-9 3-11 8Z" fill="#52D681"/></svg>
+    <h1>Cilantro</h1>
+    <p id="veilMsg">Connect to your balcony controller to see live watering status.</p>
+    <button class="cta" id="connectBtn">Connect</button>
+    <button class="mini" id="previewBtn">Preview with sample data</button>
+    <div class="err" id="err"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <nav class="tabs">
+    <button class="tab active" data-view="dash">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</button>
+    <button class="tab" data-view="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Settings</button>
+    <button class="tab" data-view="history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 4-6"/></svg>History</button>
+  </nav>
+
+<script>
+/* =======================================================================
+   Cilantro BLE app — Dashboard + Settings + History
+   Service a8b30000-… ; ints are 4-byte little-endian.
+   temp = tenths °F. threshold = whole °F. countdowns = seconds (-1 sentinel).
+   ======================================================================= */
+const SVC='a8b30000-92c7-4f44-9c12-fa6e1b947d2e';
+const CH={
+  override:'a8b30001-92c7-4f44-9c12-fa6e1b947d2e',
+  p1Int:'a8b30002-92c7-4f44-9c12-fa6e1b947d2e', p1On:'a8b30003-92c7-4f44-9c12-fa6e1b947d2e',
+  p1State:'a8b30004-92c7-4f44-9c12-fa6e1b947d2e',
+  p2Int:'a8b30005-92c7-4f44-9c12-fa6e1b947d2e', p2On:'a8b30006-92c7-4f44-9c12-fa6e1b947d2e',
+  p2State:'a8b30007-92c7-4f44-9c12-fa6e1b947d2e',
+  p3Int:'a8b30008-92c7-4f44-9c12-fa6e1b947d2e', p3On:'a8b30009-92c7-4f44-9c12-fa6e1b947d2e',
+  p3State:'a8b3000a-92c7-4f44-9c12-fa6e1b947d2e',
+  temp:'a8b3000b-92c7-4f44-9c12-fa6e1b947d2e', tempThresh:'a8b3000c-92c7-4f44-9c12-fa6e1b947d2e',
+  tempOvr:'a8b3000d-92c7-4f44-9c12-fa6e1b947d2e',
+  p1Next:'a8b3000e-92c7-4f44-9c12-fa6e1b947d2e', p2Next:'a8b3000f-92c7-4f44-9c12-fa6e1b947d2e',
+  p3Next:'a8b30010-92c7-4f44-9c12-fa6e1b947d2e', tOvrNext:'a8b30011-92c7-4f44-9c12-fa6e1b947d2e',
+};
+const GLO=60,GHI=110;
+const $=id=>document.getElementById(id);
+const sync=v=>({v,at:Date.now()});
+
+const state={
+  connected:false,preview:false,view:'dash',
+  pumps:[{on:false,next:null},{on:false,next:null},{on:false,next:null}],
+  tempF:null,threshold:null,overrideActive:false,tempOvr:null,
+  tempLog:[], events:[], sessionStart:null, ovrCause:'Scheduled',
+};
+let device=null,server=null,gatt={},pollTimer=null,tickTimer=null,previewTimer=null;
+let appOverrideAt=0, lastTempLog=0;
+
+const asBool=dv=>dv.getUint8(0)!==0;
+const asInt=dv=>dv.getInt32(0,true);
+function int32(n){const b=new ArrayBuffer(4);new DataView(b).setInt32(0,n,true);return new Uint8Array(b);}
+function remain(s){if(!s)return null;if(s.v<0)return s.v;return Math.max(0,s.v-(Date.now()-s.at)/1000);}
+function fmt(secs){secs=Math.floor(secs);const h=Math.floor(secs/3600),m=Math.floor((secs%3600)/60),s=secs%60;
+  const p=n=>String(n).padStart(2,'0');return h>0?`${h}:${p(m)}:${p(s)}`:`${m}:${p(s)}`;}
+
+/* ---------- build dashboard pumps ---------- */
+$('pumps').innerHTML=[0,1,2].map(i=>`
+  <div class="pump" id="pump${i}"><div class="node"><div class="ring"></div><div class="core"></div></div>
+  <div class="meta"><div class="name">Line ${i+1}</div><div class="state" id="pstate${i}">Idle</div></div>
+  <div class="count"><div class="num" id="pnext${i}">&mdash;</div><div class="cap" id="pcap${i}">next cycle</div></div></div>`).join('');
+
+/* ---------- build settings schedule rows ---------- */
+$('schedule').innerHTML=[1,2,3].map(n=>`
+  <div class="sl"><div class="top"><span class="lab">Line ${n} &middot; interval</span><span class="val" id="v-int${n}">— hr</span></div>
+    <input type="range" id="r-int${n}" min="4" max="48" step="1" value="18"></div>
+  <div class="sl"><div class="top"><span class="lab">Line ${n} &middot; run time</span><span class="val" id="v-on${n}">— min</span></div>
+    <input type="range" id="r-on${n}" min="1" max="10" step="1" value="5"></div>`).join('');
+
+/* ---------- live slider value labels ---------- */
+function bindSlider(rid,vid,suffix){const r=$(rid),v=$(vid);
+  const upd=()=>v.textContent=r.value+suffix; r.addEventListener('input',upd); upd();}
+[1,2,3].forEach(n=>{bindSlider(`r-int${n}`,`v-int${n}`,' hr');bindSlider(`r-on${n}`,`v-on${n}`,' min');});
+bindSlider('r-thresh','v-thresh','°F');
+$('r-thresh').addEventListener('input',()=>$('v-thresh').textContent=$('r-thresh').value+'°F');
+bindSlider('r-ovr','v-ovr',' hr');
+$('ovrEnable').addEventListener('change',e=>{
+  const on=e.target.checked; $('r-ovr').disabled=!on; $('sl-ovr').classList.toggle('dim',!on);
+  $('v-ovr').textContent=on?($('r-ovr').value+' hr'):'Off';});
+
+/* =====================  RENDER  ===================== */
+function updateChrome(){
+  $('connDot').className='dot'+(state.connected?(state.preview?' warn':' on'):'');
+  $('connLabel').textContent=state.connected?(state.preview?'Preview':'Connected'):'Offline';
+  $('topBtn').style.display=state.connected?'block':'none';
+  $('veil').classList.toggle('hidden',state.connected);
+}
+function renderDash(){
+  const t=$('temp');
+  if(state.tempF==null){t.textContent='--.-';t.className='temp';$('gFill').style.width='0%';}
+  else{t.textContent=state.tempF.toFixed(1);
+    const over=state.threshold!=null&&state.tempF>=state.threshold;
+    const near=state.threshold!=null&&state.tempF>=state.threshold-3;
+    t.className='temp'+(over?' hot':near?' clay':'');
+    $('gFill').style.width=Math.max(0,Math.min(100,(state.tempF-GLO)/(GHI-GLO)*100))+'%';}
+  if(state.threshold!=null){$('gThr').style.display='block';
+    $('gThr').style.left=Math.max(0,Math.min(100,(state.threshold-GLO)/(GHI-GLO)*100))+'%';}
+  else $('gThr').style.display='none';
+
+  const ovr=$('tempOvr'),pill=$('tempOvrPill');
+  if(state.overrideActive){ovr.textContent='running now';pill.textContent='Active';pill.style.color='var(--herb)';}
+  else{const r=remain(state.tempOvr);
+    if(r==null){ovr.textContent='—';pill.textContent='';}
+    else if(r<0){ovr.textContent='off';pill.textContent='Disabled';pill.style.color='var(--mist)';}
+    else{ovr.textContent='in '+fmt(r);pill.textContent='Armed';pill.style.color='var(--clay)';}}
+
+  state.pumps.forEach((p,i)=>{const el=$('pump'+i);if(!el)return;
+    el.classList.toggle('on',p.on);
+    $('pstate'+i).textContent=p.on?'Watering':'Idle';
+    const r=remain(p.next),num=$('pnext'+i),cap=$('pcap'+i);
+    if(p.on){num.textContent='ON';cap.textContent='watering';}
+    else if(r==null){num.textContent='—';cap.textContent='next cycle';}
+    else if(r<0){num.textContent='off';cap.textContent='line idle';}
+    else{num.textContent=fmt(r);cap.textContent='next cycle';}});
+
+  const ob=$('override');
+  if(state.overrideActive){ob.disabled=true;ob.innerHTML='<span class="live"></span>Watering cycle running';}
+  else{ob.disabled=!state.connected;ob.textContent='Run watering cycle now';}
+}
+function render(){updateChrome();renderDash();if(state.view==='history')renderHistory();}
+
+/* =====================  HISTORY RENDER  ===================== */
+function renderHistory(){
+  const note=$('histNote');
+  note.innerHTML=state.preview
+    ? 'Preview data. On the real controller this records live while the app is open.'
+    : 'Records live while connected. Multi-day history that survives a reboot would need controller-side logging — a later firmware step. “Manual” vs “Heat” cause is inferred.';
+
+  // temperature chart
+  const card=$('tempChartCard'), log=state.tempLog;
+  if(log.length<2){card.innerHTML='<div class="empty">'+(state.connected?'Collecting temperature…':'Connect to start recording temperature.')+'</div>';}
+  else{
+    const W=400,H=150,padL=30,padR=10,padT=12,padB=20;
+    const t0=log[0].t,t1=log[log.length-1].t,span=Math.max(1,t1-t0);
+    const fs=log.map(p=>p.f), thr=state.threshold;
+    let lo=Math.min(...fs),hi=Math.max(...fs); if(thr!=null){lo=Math.min(lo,thr);hi=Math.max(hi,thr);}
+    lo=Math.floor(lo-1);hi=Math.ceil(hi+1); if(hi-lo<4){hi=lo+4;}
+    const X=t=>padL+(t-t0)/span*(W-padL-padR);
+    const Y=f=>padT+(1-(f-lo)/(hi-lo))*(H-padT-padB);
+    const pts=log.map(p=>`${X(p.t).toFixed(1)},${Y(p.f).toFixed(1)}`).join(' ');
+    const area=`${padL},${H-padB} ${pts} ${X(t1).toFixed(1)},${H-padB}`;
+    const thrY=thr!=null?Y(thr):null;
+    const fmtClock=ms=>{const d=new Date(ms);return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');};
+    card.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:170px">
+      <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#52D681" stop-opacity=".28"/><stop offset="1" stop-color="#52D681" stop-opacity="0"/></linearGradient></defs>
+      <text x="2" y="${Y(hi)+4}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${hi}</text>
+      <text x="2" y="${Y(lo)+4}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${lo}</text>
+      ${thrY!=null?`<line x1="${padL}" y1="${thrY}" x2="${W-padR}" y2="${thrY}" stroke="#E8A15C" stroke-width="1" stroke-dasharray="4 4" opacity=".8"/>
+        <text x="${W-padR}" y="${thrY-4}" fill="#E8A15C" font-size="9" text-anchor="end" font-family="JetBrains Mono">${thr}°</text>`:''}
+      <polygon points="${area}" fill="url(#tg)"/>
+      <polyline points="${pts}" fill="none" stroke="#52D681" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <text x="${padL}" y="${H-6}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${fmtClock(t0)}</text>
+      <text x="${W-padR}" y="${H-6}" fill="#8AA396" font-size="9" text-anchor="end" font-family="JetBrains Mono">${fmtClock(t1)}</text>
+    </svg>`;
+  }
+
+  // watering timeline
+  const evs=state.events.filter(e=>e.end||e.start);
+  const tl=$('timeline');
+  if(evs.length===0){tl.innerHTML='<div class="empty">No watering recorded yet this session.</div>';return;}
+  const now=Date.now(), start=state.sessionStart||evs[0].start, span=Math.max(60000,now-start);
+  const color={Scheduled:'var(--herb)',Manual:'var(--cool)',Heat:'var(--clay)'};
+  const lanes=[0,1,2].map(i=>{
+    const bars=evs.filter(e=>e.line===i).map(e=>{
+      const a=Math.max(0,(e.start-start)/span*100);
+      const b=Math.min(100,((e.end||now)-start)/span*100);
+      return `<div class="evt" style="left:${a}%;width:${Math.max(0.8,b-a)}%;background:${color[e.cause]||'var(--herb)'}"></div>`;
+    }).join('');
+    return `<div class="lane"><div class="name">Line ${i+1}</div><div class="track2">${bars}</div></div>`;
+  }).join('');
+  const fc=ms=>{const d=new Date(ms);return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');};
+  tl.innerHTML=lanes+`<div class="axis"><span>${fc(start)}</span><span>now</span></div>`;
+}
+
+/* =====================  RECORDING  ===================== */
+function logTemp(){if(state.tempF==null)return;const now=Date.now();
+  if(now-lastTempLog<25000)return; lastTempLog=now;
+  state.tempLog.push({t:now,f:state.tempF}); if(state.tempLog.length>2000)state.tempLog.shift();}
+function setPump(i,on){
+  const was=state.pumps[i].on; state.pumps[i].on=on;
+  if(on&&!was){state.events.push({line:i,start:Date.now(),end:null,cause:state.overrideActive?state.ovrCause:'Scheduled'});}
+  else if(!on&&was){for(let k=state.events.length-1;k>=0;k--){if(state.events[k].line===i&&!state.events[k].end){state.events[k].end=Date.now();break;}}}
+}
+function classifyOverride(){
+  if(Date.now()-appOverrideAt<4000) state.ovrCause='Manual';
+  else if(state.threshold!=null&&state.tempF!=null&&state.tempF>=state.threshold-2) state.ovrCause='Heat';
+  else state.ovrCause='Manual';
+}
+
+/* =====================  BLE  ===================== */
+const bleOK=()=>typeof navigator!=='undefined'&&navigator.bluetooth;
+async function connect(){
+  $('err').textContent='';
+  if(!bleOK()){$('veilMsg').textContent="This browser can't reach Bluetooth. On iPhone open this page in the Bluefy app; on a computer use Chrome or Edge.";
+    $('err').textContent='Web Bluetooth unavailable here.';return;}
+  try{
+    device=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]}],optionalServices:[SVC]});
+    device.addEventListener('gattserverdisconnected',onDrop);
+    server=await device.gatt.connect();
+    const svc=await server.getPrimaryService(SVC);
+    for(const k in CH) gatt[k]=await svc.getCharacteristic(CH[k]);
+    await sub('p1State',dv=>{setPump(0,asBool(dv));render();});
+    await sub('p2State',dv=>{setPump(1,asBool(dv));render();});
+    await sub('p3State',dv=>{setPump(2,asBool(dv));render();});
+    await sub('temp',dv=>{state.tempF=asInt(dv)/10;logTemp();render();});
+    await sub('override',dv=>{const a=asBool(dv);if(a&&!state.overrideActive)classifyOverride();state.overrideActive=a;render();});
+    await sub('p1Next',dv=>{state.pumps[0].next=sync(asInt(dv));render();});
+    await sub('p2Next',dv=>{state.pumps[1].next=sync(asInt(dv));render();});
+    await sub('p3Next',dv=>{state.pumps[2].next=sync(asInt(dv));render();});
+    await sub('tOvrNext',dv=>{state.tempOvr=sync(asInt(dv));render();});
+    state.connected=true;state.preview=false;state.sessionStart=Date.now();
+    await readAll(); await readSettings();
+    pollTimer=setInterval(readAll,3000); startTick();
+    render();
+  }catch(e){if(!(e&&e.name==='NotFoundError'))$('err').textContent=e.message||'Connection failed.';}
+}
+async function sub(key,cb){const c=gatt[key];c.addEventListener('characteristicvaluechanged',e=>cb(e.target.value));
+  try{await c.startNotifications();}catch(_){}}
+async function readAll(){try{
+  state.tempF=asInt(await gatt.temp.readValue())/10;
+  state.threshold=asInt(await gatt.tempThresh.readValue());
+  const a=asBool(await gatt.override.readValue());if(a&&!state.overrideActive)classifyOverride();state.overrideActive=a;
+  setPump(0,asBool(await gatt.p1State.readValue()));
+  setPump(1,asBool(await gatt.p2State.readValue()));
+  setPump(2,asBool(await gatt.p3State.readValue()));
+  state.pumps[0].next=sync(asInt(await gatt.p1Next.readValue()));
+  state.pumps[1].next=sync(asInt(await gatt.p2Next.readValue()));
+  state.pumps[2].next=sync(asInt(await gatt.p3Next.readValue()));
+  state.tempOvr=sync(asInt(await gatt.tOvrNext.readValue()));
+  logTemp(); render();
+}catch(e){}}
+async function readSettings(){
+  if(state.preview){fillSettings(18,5,24,5,30,5,90,6);return;}
+  try{
+    const v=async k=>asInt(await gatt[k].readValue());
+    fillSettings(await v('p1Int'),await v('p1On'),await v('p2Int'),await v('p2On'),
+      await v('p3Int'),await v('p3On'),await v('tempThresh'),await v('tempOvr'));
+  }catch(e){}
+}
+function fillSettings(i1,o1,i2,o2,i3,o3,th,ov){
+  const set=(rid,vid,val,suf)=>{$(rid).value=val;$(vid).textContent=val+suf;};
+  set('r-int1','v-int1',i1,' hr');set('r-on1','v-on1',o1,' min');
+  set('r-int2','v-int2',i2,' hr');set('r-on2','v-on2',o2,' min');
+  set('r-int3','v-int3',i3,' hr');set('r-on3','v-on3',o3,' min');
+  set('r-thresh','v-thresh',th,'°F');
+  const on=ov>0; $('ovrEnable').checked=on; $('r-ovr').disabled=!on; $('sl-ovr').classList.toggle('dim',!on);
+  if(on){$('r-ovr').value=ov;$('v-ovr').textContent=ov+' hr';} else $('v-ovr').textContent='Off';
+}
+async function pushSettings(){
+  if(state.preview){toast('Saved (preview)');return;}
+  if(!state.connected){toast('Not connected');return;}
+  const ov=$('ovrEnable').checked?parseInt($('r-ovr').value):0;
+  try{
+    await gatt.p1Int.writeValue(int32(+$('r-int1').value)); await gatt.p1On.writeValue(int32(+$('r-on1').value));
+    await gatt.p2Int.writeValue(int32(+$('r-int2').value)); await gatt.p2On.writeValue(int32(+$('r-on2').value));
+    await gatt.p3Int.writeValue(int32(+$('r-int3').value)); await gatt.p3On.writeValue(int32(+$('r-on3').value));
+    await gatt.tempThresh.writeValue(int32(+$('r-thresh').value)); await gatt.tempOvr.writeValue(int32(ov));
+    toast('Saved to controller ✓'); setTimeout(readAll,400);
+  }catch(e){toast('Save failed'); $('err').textContent=e.message||e;}
+}
+async function runOverride(){
+  if(state.preview){previewOverride();return;}
+  if(!state.connected)return; appOverrideAt=Date.now();
+  try{await gatt.override.writeValue(Uint8Array.of(1));}catch(e){$('err').textContent='Override failed: '+(e.message||e);}
+}
+function onDrop(){state.connected=false;clearInterval(pollTimer);clearInterval(tickTimer);
+  $('veilMsg').textContent='Lost connection to Cilantro. Tap to reconnect.';render();}
+function disconnect(){if(device&&device.gatt.connected)device.gatt.disconnect();onDrop();}
+function startTick(){clearInterval(tickTimer);tickTimer=setInterval(render,1000);}
+
+/* =====================  TOAST + NAV  ===================== */
+let toastTimer=null;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200);}
+function showView(name){
+  state.view=name;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('view-'+name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===name));
+  if(name==='settings'&&state.connected)readSettings();
+  if(name==='history')renderHistory();
+}
+
+/* =====================  PREVIEW  ===================== */
+function startPreview(){
+  state.connected=true;state.preview=true;state.threshold=90;state.tempF=82.4;
+  state.pumps=[{on:false,next:sync(6*3600+1952)},{on:false,next:sync(24*3600+540)},{on:false,next:sync(30*3600+12)}];
+  state.tempOvr=sync(6*3600);state.overrideActive=false;
+  // seed a few hours of fake history
+  const now=Date.now();state.sessionStart=now-5*3600*1000;state.tempLog=[];state.events=[];
+  for(let m=0;m<=300;m+=5){const tt=state.sessionStart+m*60000;
+    const f=78+8*Math.sin(m/55)+Math.random()*1.5;state.tempLog.push({t:tt,f:+f.toFixed(1)});}
+  state.events.push({line:0,start:now-4.5*3600*1000,end:now-4.5*3600*1000+300000,cause:'Scheduled'});
+  state.events.push({line:1,start:now-3*3600*1000,end:now-3*3600*1000+300000,cause:'Scheduled'});
+  state.events.push({line:0,start:now-1.4*3600*1000,end:now-1.4*3600*1000+150000,cause:'Manual'});
+  state.events.push({line:1,start:now-1.4*3600*1000+160000,end:now-1.4*3600*1000+310000,cause:'Manual'});
+  fillSettings(18,5,24,5,30,5,90,6);
+  startTick();
+  let k=0;previewTimer=setInterval(()=>{k++;
+    state.tempF=Math.max(74,Math.min(94,state.tempF+(Math.random()-0.45)*0.3));logTemp();
+    if(k%18===0&&!state.overrideActive){const i=Math.floor(Math.random()*3);setPump(i,true);
+      setTimeout(()=>{setPump(i,false);state.pumps[i].next=sync((4+Math.random()*44)*3600);render();},6000);}
+    render();
+  },1000);
+  render();
+}
+function previewOverride(){
+  appOverrideAt=Date.now();state.overrideActive=true;state.ovrCause='Manual';render();
+  let i=0;const seq=()=>{if(i>0)setPump(i-1,false);
+    if(i<3){setPump(i,true);i++;setTimeout(seq,2500);}else{state.overrideActive=false;}render();};seq();
+}
+
+/* =====================  WIRE UP  ===================== */
+$('connectBtn').addEventListener('click',connect);
+$('previewBtn').addEventListener('click',startPreview);
+$('override').addEventListener('click',runOverride);
+$('update').addEventListener('click',pushSettings);
+$('topBtn').addEventListener('click',disconnect);
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showView(t.dataset.view)));
+render();
+</script>
+</body>
+</html>
