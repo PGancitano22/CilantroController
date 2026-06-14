@@ -267,6 +267,10 @@ const CH={
   p3Next:'a8b30010-92c7-4f44-9c12-fa6e1b947d2e', tOvrNext:'a8b30011-92c7-4f44-9c12-fa6e1b947d2e',
 };
 const GLO=60,GHI=110;
+const LOG_KEY='cilantro.templog.v1';
+const LOG_WINDOW_MS=24*3600*1000;   // rolling 24-hour window
+const LOG_INTERVAL_MS=30000;        // store roughly one sample / 30s
+const GAP_MS=3*60*1000;             // >3 min between samples == a disconnection gap
 const $=id=>document.getElementById(id);
 const sync=v=>({v,at:Date.now()});
 
@@ -358,34 +362,59 @@ function renderHistory(){
   const note=$('histNote');
   note.innerHTML=state.preview
     ? 'Preview data. On the real controller this records live while the app is open.'
-    : 'Records live while connected. Multi-day history that survives a reboot would need controller-side logging — a later firmware step. “Manual” vs “Heat” cause is inferred.';
+    : 'Temperature is kept for a rolling 24 hours on this phone, across reconnects and reloads, with gaps shown where the app was disconnected. Watering below covers the current session. (Stored only in this browser; controller-side logging would be a later firmware step.) “Manual” vs “Heat” cause is inferred.';
 
-  // temperature chart
+  // temperature chart — rolling window up to 24h, with gaps where disconnected
   const card=$('tempChartCard'), log=state.tempLog;
-  if(log.length<2){card.innerHTML='<div class="empty">'+(state.connected?'Collecting temperature…':'Connect to start recording temperature.')+'</div>';}
+  if(log.length<2){card.innerHTML='<div class="empty">'+(state.connected?'Collecting temperature…':(log.length?'Reconnect to keep recording.':'No temperature history yet.'))+'</div>';}
   else{
     const W=400,H=150,padL=30,padR=10,padT=12,padB=20;
-    const t0=log[0].t,t1=log[log.length-1].t,span=Math.max(1,t1-t0);
-    const fs=log.map(p=>p.f), thr=state.threshold;
+    const now=Date.now();
+    const t0=Math.max(log[0].t, now-LOG_WINDOW_MS);   // earliest available, capped at 24h
+    const t1=now;                                     // right edge is the present
+    const span=Math.max(1,t1-t0);
+    const vis=log.filter(p=>p.t>=t0);
+    const fs=vis.map(p=>p.f), thr=state.threshold;
     let lo=Math.min(...fs),hi=Math.max(...fs); if(thr!=null){lo=Math.min(lo,thr);hi=Math.max(hi,thr);}
     lo=Math.floor(lo-1);hi=Math.ceil(hi+1); if(hi-lo<4){hi=lo+4;}
     const X=t=>padL+(t-t0)/span*(W-padL-padR);
     const Y=f=>padT+(1-(f-lo)/(hi-lo))*(H-padT-padB);
-    const pts=log.map(p=>`${X(p.t).toFixed(1)},${Y(p.f).toFixed(1)}`).join(' ');
-    const area=`${padL},${H-padB} ${pts} ${X(t1).toFixed(1)},${H-padB}`;
+
+    // split into continuous segments wherever there's a disconnection gap
+    const segs=[]; let cur=[];
+    for(let i=0;i<vis.length;i++){
+      if(i>0 && vis[i].t-vis[i-1].t>GAP_MS){ if(cur.length)segs.push(cur); cur=[]; }
+      cur.push(vis[i]);
+    }
+    if(cur.length)segs.push(cur);
+
+    const gapBands=segs.slice(0,-1).map((s,i)=>{
+      const x1=X(s[s.length-1].t), x2=X(segs[i+1][0].t);
+      return `<rect x="${x1.toFixed(1)}" y="${padT}" width="${(x2-x1).toFixed(1)}" height="${H-padT-padB}" fill="#8AA396" opacity=".06"/>`;
+    }).join('');
+    const lines=segs.map(s=>{
+      const pts=s.map(p=>`${X(p.t).toFixed(1)},${Y(p.f).toFixed(1)}`).join(' ');
+      if(s.length===1) return `<circle cx="${X(s[0].t).toFixed(1)}" cy="${Y(s[0].f).toFixed(1)}" r="1.8" fill="#52D681"/>`;
+      const area=`${X(s[0].t).toFixed(1)},${H-padB} ${pts} ${X(s[s.length-1].t).toFixed(1)},${H-padB}`;
+      return `<polygon points="${area}" fill="url(#tg)"/><polyline points="${pts}" fill="none" stroke="#52D681" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }).join('');
+
     const thrY=thr!=null?Y(thr):null;
+    const dur=t1-t0, mins=Math.round(dur/60000), hrs=(dur/3600000);
+    const spanLabel = mins<90 ? `past ${mins} min` : `past ${hrs<24?hrs.toFixed(1):'24'} hr`;
     const fmtClock=ms=>{const d=new Date(ms);return d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');};
-    card.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:170px">
+    card.innerHTML=`<div class="note" style="padding:0 2px 8px">${spanLabel} · ${vis.length} readings</div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:170px">
       <defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#52D681" stop-opacity=".28"/><stop offset="1" stop-color="#52D681" stop-opacity="0"/></linearGradient></defs>
       <text x="2" y="${Y(hi)+4}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${hi}</text>
       <text x="2" y="${Y(lo)+4}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${lo}</text>
+      ${gapBands}
       ${thrY!=null?`<line x1="${padL}" y1="${thrY}" x2="${W-padR}" y2="${thrY}" stroke="#E8A15C" stroke-width="1" stroke-dasharray="4 4" opacity=".8"/>
         <text x="${W-padR}" y="${thrY-4}" fill="#E8A15C" font-size="9" text-anchor="end" font-family="JetBrains Mono">${thr}°</text>`:''}
-      <polygon points="${area}" fill="url(#tg)"/>
-      <polyline points="${pts}" fill="none" stroke="#52D681" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${lines}
       <text x="${padL}" y="${H-6}" fill="#8AA396" font-size="9" font-family="JetBrains Mono">${fmtClock(t0)}</text>
-      <text x="${W-padR}" y="${H-6}" fill="#8AA396" font-size="9" text-anchor="end" font-family="JetBrains Mono">${fmtClock(t1)}</text>
+      <text x="${W-padR}" y="${H-6}" fill="#8AA396" font-size="9" text-anchor="end" font-family="JetBrains Mono">now</text>
     </svg>`;
   }
 
@@ -408,9 +437,16 @@ function renderHistory(){
 }
 
 /* =====================  RECORDING  ===================== */
-function logTemp(){if(state.tempF==null)return;const now=Date.now();
-  if(now-lastTempLog<25000)return; lastTempLog=now;
-  state.tempLog.push({t:now,f:state.tempF}); if(state.tempLog.length>2000)state.tempLog.shift();}
+function pruneLog(){const cut=Date.now()-LOG_WINDOW_MS;state.tempLog=state.tempLog.filter(p=>p.t>=cut);}
+function saveLog(){ if(state.preview) return; try{ localStorage.setItem(LOG_KEY,JSON.stringify(state.tempLog)); }catch(e){} }
+function loadLog(){ try{ const raw=localStorage.getItem(LOG_KEY); if(raw){ state.tempLog=JSON.parse(raw)||[]; pruneLog(); } }catch(e){} }
+function logTemp(){
+  if(state.tempF==null)return;
+  const now=Date.now();
+  if(now-lastTempLog<LOG_INTERVAL_MS)return; lastTempLog=now;
+  state.tempLog.push({t:now,f:+state.tempF.toFixed(1)});
+  pruneLog(); saveLog();
+}
 function setPump(i,on){
   const was=state.pumps[i].on; state.pumps[i].on=on;
   if(on&&!was){state.events.push({line:i,start:Date.now(),end:null,cause:state.overrideActive?state.ovrCause:'Scheduled'});}
@@ -447,6 +483,7 @@ async function connect(){
     // Reveal the dashboard immediately — don't make the transition wait on the
     // initial reads. Values fill in from notifications and the first poll.
     state.connected=true; state.preview=false; state.sessionStart=Date.now();
+    loadLog();   // restore the rolling 24h history; new samples append to it
     render();
 
     // Enable notifications one at a time (iOS allows one GATT op at a time).
@@ -578,6 +615,7 @@ $('override').addEventListener('click',runOverride);
 $('update').addEventListener('click',pushSettings);
 $('topBtn').addEventListener('click',disconnect);
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>showView(t.dataset.view)));
+loadLog();
 render();
 </script>
 </body>
