@@ -278,6 +278,8 @@ const state={
 };
 let device=null,server=null,gatt={},pollTimer=null,tickTimer=null,previewTimer=null;
 let appOverrideAt=0, lastTempLog=0;
+let gattBusy=false; const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function lockGatt(){for(let i=0;i<40&&gattBusy;i++)await sleep(50);gattBusy=true;}
 
 const asBool=dv=>dv.getUint8(0)!==0;
 const asInt=dv=>dv.getInt32(0,true);
@@ -430,8 +432,24 @@ async function connect(){
     device=await navigator.bluetooth.requestDevice({filters:[{services:[SVC]}],optionalServices:[SVC]});
     device.addEventListener('gattserverdisconnected',onDrop);
     server=await device.gatt.connect();
-    const svc=await server.getPrimaryService(SVC);
-    for(const k in CH) gatt[k]=await svc.getCharacteristic(CH[k]);
+
+    // iOS/Bluefy often isn't ready to enumerate services the instant connect()
+    // resolves. Retry discovery a few times instead of failing the whole connect.
+    let svc=null;
+    for(let attempt=1; attempt<=5 && !svc; attempt++){
+      try{
+        svc=await server.getPrimaryService(SVC);
+        for(const k in CH) gatt[k]=await svc.getCharacteristic(CH[k]);
+      }catch(e){ svc=null; gatt={}; await sleep(400); }
+    }
+    if(!svc) throw new Error('Found Cilantro but could not read its service. Tap Connect to retry.');
+
+    // Reveal the dashboard immediately — don't make the transition wait on the
+    // initial reads. Values fill in from notifications and the first poll.
+    state.connected=true; state.preview=false; state.sessionStart=Date.now();
+    render();
+
+    // Enable notifications one at a time (iOS allows one GATT op at a time).
     await sub('p1State',dv=>{setPump(0,asBool(dv));render();});
     await sub('p2State',dv=>{setPump(1,asBool(dv));render();});
     await sub('p3State',dv=>{setPump(2,asBool(dv));render();});
@@ -441,15 +459,18 @@ async function connect(){
     await sub('p2Next',dv=>{state.pumps[1].next=sync(asInt(dv));render();});
     await sub('p3Next',dv=>{state.pumps[2].next=sync(asInt(dv));render();});
     await sub('tOvrNext',dv=>{state.tempOvr=sync(asInt(dv));render();});
-    state.connected=true;state.preview=false;state.sessionStart=Date.now();
+
+    startTick();
+    pollTimer=setInterval(readAll,3000);
     await readAll(); await readSettings();
-    pollTimer=setInterval(readAll,3000); startTick();
-    render();
   }catch(e){if(!(e&&e.name==='NotFoundError'))$('err').textContent=e.message||'Connection failed.';}
 }
 async function sub(key,cb){const c=gatt[key];c.addEventListener('characteristicvaluechanged',e=>cb(e.target.value));
   try{await c.startNotifications();}catch(_){}}
-async function readAll(){try{
+async function readAll(){
+  if(gattBusy) return;            // skip this poll if another op is mid-flight
+  gattBusy=true;
+  try{
   state.tempF=asInt(await gatt.temp.readValue())/10;
   state.threshold=asInt(await gatt.tempThresh.readValue());
   const a=asBool(await gatt.override.readValue());if(a&&!state.overrideActive)classifyOverride();state.overrideActive=a;
@@ -461,14 +482,16 @@ async function readAll(){try{
   state.pumps[2].next=sync(asInt(await gatt.p3Next.readValue()));
   state.tempOvr=sync(asInt(await gatt.tOvrNext.readValue()));
   logTemp(); render();
-}catch(e){}}
+  }catch(e){}finally{gattBusy=false;}
+}
 async function readSettings(){
   if(state.preview){fillSettings(18,5,24,5,30,5,90,6);return;}
+  await lockGatt();
   try{
     const v=async k=>asInt(await gatt[k].readValue());
     fillSettings(await v('p1Int'),await v('p1On'),await v('p2Int'),await v('p2On'),
       await v('p3Int'),await v('p3On'),await v('tempThresh'),await v('tempOvr'));
-  }catch(e){}
+  }catch(e){}finally{gattBusy=false;}
 }
 function fillSettings(i1,o1,i2,o2,i3,o3,th,ov){
   const set=(rid,vid,val,suf)=>{$(rid).value=val;$(vid).textContent=val+suf;};
@@ -483,18 +506,23 @@ async function pushSettings(){
   if(state.preview){toast('Saved (preview)');return;}
   if(!state.connected){toast('Not connected');return;}
   const ov=$('ovrEnable').checked?parseInt($('r-ovr').value):0;
+  await lockGatt();
   try{
     await gatt.p1Int.writeValue(int32(+$('r-int1').value)); await gatt.p1On.writeValue(int32(+$('r-on1').value));
     await gatt.p2Int.writeValue(int32(+$('r-int2').value)); await gatt.p2On.writeValue(int32(+$('r-on2').value));
     await gatt.p3Int.writeValue(int32(+$('r-int3').value)); await gatt.p3On.writeValue(int32(+$('r-on3').value));
     await gatt.tempThresh.writeValue(int32(+$('r-thresh').value)); await gatt.tempOvr.writeValue(int32(ov));
-    toast('Saved to controller ✓'); setTimeout(readAll,400);
+    toast('Saved to controller ✓'); setTimeout(readAll,500);
   }catch(e){toast('Save failed'); $('err').textContent=e.message||e;}
+  finally{gattBusy=false;}
 }
 async function runOverride(){
   if(state.preview){previewOverride();return;}
   if(!state.connected)return; appOverrideAt=Date.now();
-  try{await gatt.override.writeValue(Uint8Array.of(1));}catch(e){$('err').textContent='Override failed: '+(e.message||e);}
+  await lockGatt();
+  try{await gatt.override.writeValue(Uint8Array.of(1));}
+  catch(e){$('err').textContent='Override failed: '+(e.message||e);}
+  finally{gattBusy=false;}
 }
 function onDrop(){state.connected=false;clearInterval(pollTimer);clearInterval(tickTimer);
   $('veilMsg').textContent='Lost connection to Cilantro. Tap to reconnect.';render();}
